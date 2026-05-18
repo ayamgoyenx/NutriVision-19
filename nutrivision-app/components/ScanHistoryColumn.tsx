@@ -3,12 +3,14 @@
 import { Camera } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
+import Image from "next/image";
 
 interface Scan {
     id: number;
     product_id: number;
     product_name: string;
     product_brand: string | null;
+    image_path?: string | null;
     nutrition_score: number;
     scanned_at: string;
     category: string | null;
@@ -30,11 +32,11 @@ export default function ScanHistoryColumn({
     // Filter scans untuk 5 hari terakhir
     const filteredScans = useMemo(() => {
         if (!scans || scans.length === 0) return [];
-        
+
         const fiveDaysAgo = new Date();
         fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
         fiveDaysAgo.setHours(0, 0, 0, 0);
-        
+
         return scans.filter((scan) => {
             const scanDate = new Date(scan.scanned_at);
             scanDate.setHours(0, 0, 0, 0);
@@ -69,6 +71,17 @@ export default function ScanHistoryColumn({
                             key={scan.id}
                             onClick={() => onScanClick(scan)}
                             className="flex gap-3 p-3 bg-white rounded-lg border border-lime-100 hover:shadow-md hover:bg-lime-50 transition-all cursor-pointer">
+                            <div className="relative w-12 h-12 shrink-0 rounded-md overflow-hidden border border-lime-100 bg-gray-100">
+                                {scan.image_path ? (
+                                    <Image
+                                        src={scan.image_path}
+                                        alt={`Hasil scan ${scan.product_name}`}
+                                        fill
+                                        sizes="48px"
+                                        className="object-cover"
+                                    />
+                                ) : null}
+                            </div>
                             <div className="flex-1 min-w-0">
                                 <h4 className="font-semibold text-[#1a3129] text-sm truncate">
                                     {scan.product_name}
@@ -124,11 +137,15 @@ export default function ScanHistoryColumn({
             </div>
 
             <div className="flex flex-col gap-2 mt-2">
-                <button onClick={() => router.push("/scan")} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors">
+                <button
+                    onClick={() => router.push("/scan")}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors">
                     <Camera size={16} />
                     Scan Produk Baru
                 </button>
-                <button onClick={() => router.push("/scan-history")} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border-2 border-[#cbea7b] text-[#2d6a3e] rounded-lg font-semibold hover:bg-lime-50 transition-colors">
+                <button
+                    onClick={() => router.push("/scan-history")}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border-2 border-[#cbea7b] text-[#2d6a3e] rounded-lg font-semibold hover:bg-lime-50 transition-colors">
                     Lihat Riwayat
                 </button>
             </div>
