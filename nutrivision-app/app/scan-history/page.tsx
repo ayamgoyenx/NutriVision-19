@@ -178,6 +178,17 @@ export default function ScanHistory() {
                                         key={scan.id}
                                         onClick={() => fetchProductDetail(scan)}
                                         className="p-6 bg-white rounded-[10px] border border-lime-200 shadow-sm hover:shadow-md hover:border-lime-300 transition-all cursor-pointer flex flex-col gap-4">
+                                        {scan.image_path ? (
+                                            <div className="relative w-full h-40 rounded-lg overflow-hidden border border-lime-100 bg-gray-100">
+                                                <Image
+                                                    src={scan.image_path}
+                                                    alt={`Hasil scan ${scan.product_name}`}
+                                                    fill
+                                                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                                    className="object-cover"
+                                                />
+                                            </div>
+                                        ) : null}
                                         <div className="flex-1 min-w-0">
                                             <h3 className="font-bold text-[#1a3129] text-lg truncate">
                                                 {scan.product_name}

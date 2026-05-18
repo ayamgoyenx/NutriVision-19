@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Camera } from "lucide-react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import Footer from "@/components/Footer";
 import MedForm from "@/components/user/MedForm";
 import ProductDetailModal from "@/components/ProductDetailModal";
@@ -30,7 +28,7 @@ interface Scan {
     product_id: number;
     product_name: string;
     product_brand: string | null;
-    image_path: string | null;
+    image_path?: string | null;
     nutrition_score: number;
     scanned_at: string;
     category: string | null;
@@ -71,6 +69,10 @@ interface DashboardData {
             carbs: NutrientTotal;
             fat: NutrientTotal;
             fiber: NutrientTotal;
+        };
+        restrictedNutrients: {
+            sugar: NutrientTotal;
+            sodium: NutrientTotal;
         };
     };
     scans: Scan[];
@@ -200,6 +202,35 @@ export default function Dashboard() {
         return new Map(customTargets.map((t) => [t.nutrientId, t] as const));
     }, [customTargets]);
 
+    const derivedMacroLimits = useMemo(() => {
+        const macros = data?.dailyStats?.macronutrients;
+        return {
+            protein: macros?.protein?.limit ?? null,
+            carbs: macros?.carbs?.limit ?? null,
+            fat: macros?.fat?.limit ?? null,
+            fiber: macros?.fiber?.limit ?? null,
+        };
+    }, [data?.dailyStats?.macronutrients]);
+
+    const isMacroLikeNutrientName = useCallback((nutrientName: string) => {
+        const lower = nutrientName.trim().toLowerCase();
+        return (
+            /protein/.test(lower) ||
+            /carb|karbo/.test(lower) ||
+            /fat|lemak|lipid/.test(lower) ||
+            /fiber|serat/.test(lower) ||
+            /calorie|kalori|energi/.test(lower)
+        );
+    }, []);
+
+    const visibleCustomTargets = useMemo(() => {
+        // Macro limits are derived from daily_calories_target, so hide macro-like custom targets
+        // to avoid confusing mismatches with the Kalori Harian card.
+        return customTargets.filter(
+            (t) => !isMacroLikeNutrientName(t.nutrientName),
+        );
+    }, [customTargets, isMacroLikeNutrientName]);
+
     const ageYears = useMemo(() => {
         const birthDate = health?.birth_date;
         if (!birthDate) return null;
@@ -277,8 +308,6 @@ export default function Dashboard() {
         setSelectedProduct(null);
         setModalError(null);
     };
-
-
 
     return (
         <div className="min-h-screen bg-background font-sans flex flex-col">
@@ -360,8 +389,7 @@ export default function Dashboard() {
                                                             0,
                                                         ) || 0) /
                                                             (data?.scans
-                                                                ?.length ||
-                                                                1),
+                                                                ?.length || 1),
                                                     )}
                                                 </span>
                                                 <span className="text-xs text-white opacity-80">
@@ -377,8 +405,8 @@ export default function Dashboard() {
                                                                 scan.nutrition_score,
                                                             0,
                                                         ) || 0) /
-                                                        (data?.scans
-                                                            ?.length || 1);
+                                                        (data?.scans?.length ||
+                                                            1);
                                                     if (avgScore >= 80)
                                                         return "bg-green-600";
                                                     if (avgScore >= 60)
@@ -397,8 +425,8 @@ export default function Dashboard() {
                                                                 scan.nutrition_score,
                                                             0,
                                                         ) || 0) /
-                                                        (data?.scans
-                                                            ?.length || 1);
+                                                        (data?.scans?.length ||
+                                                            1);
                                                     if (avgScore >= 80)
                                                         return "A";
                                                     if (avgScore >= 60)
@@ -559,10 +587,15 @@ export default function Dashboard() {
                                                         lower,
                                                     );
                                                 const isFat =
-                                                    /fat|lemak/.test(lower) &&
-                                                    !/jenuh|saturated/.test(
+                                                    /fat|lemak|lipid/.test(
                                                         lower,
                                                     );
+                                                const isProtein =
+                                                    /protein/.test(lower);
+                                                const isCarbs =
+                                                    /carb|karbo/.test(lower);
+                                                const isFiber =
+                                                    /fiber|serat/.test(lower);
                                                 const isCalories =
                                                     /calorie|kalori|energi/.test(
                                                         lower,
@@ -582,14 +615,23 @@ export default function Dashboard() {
                                                             ?.daily_sodium_limit ??
                                                         null)
                                                       : isFat
-                                                        ? (data?.healthProfile
-                                                              ?.daily_fat_limit ??
+                                                        ? (derivedMacroLimits.fat ??
                                                           null)
-                                                        : isCalories
-                                                          ? (data?.healthProfile
-                                                                ?.daily_calories_target ??
+                                                        : isProtein
+                                                          ? (derivedMacroLimits.protein ??
                                                             null)
-                                                          : null;
+                                                          : isCarbs
+                                                            ? (derivedMacroLimits.carbs ??
+                                                              null)
+                                                            : isFiber
+                                                              ? (derivedMacroLimits.fiber ??
+                                                                null)
+                                                              : isCalories
+                                                                ? (data
+                                                                      ?.healthProfile
+                                                                      ?.daily_calories_target ??
+                                                                  null)
+                                                                : null;
 
                                                 const maxValue =
                                                     profileLimit ??
@@ -608,6 +650,35 @@ export default function Dashboard() {
                                                           : (custom?.unit ??
                                                             t.unit ??
                                                             "");
+
+                                                const consumed = isSugar
+                                                    ? (data?.dailyStats
+                                                          ?.restrictedNutrients
+                                                          ?.sugar?.total ??
+                                                      null)
+                                                    : isSodium
+                                                      ? (data?.dailyStats
+                                                            ?.restrictedNutrients
+                                                            ?.sodium?.total ??
+                                                        null)
+                                                      : null;
+
+                                                const progressPct =
+                                                    maxValue &&
+                                                    Number.isFinite(maxValue) &&
+                                                    maxValue > 0 &&
+                                                    consumed !== null &&
+                                                    Number.isFinite(consumed)
+                                                        ? Math.min(
+                                                              100,
+                                                              Math.max(
+                                                                  0,
+                                                                  (consumed /
+                                                                      maxValue) *
+                                                                      100,
+                                                              ),
+                                                          )
+                                                        : null;
 
                                                 const colorClass = isSugar
                                                     ? "text-red-500"
@@ -635,14 +706,14 @@ export default function Dashboard() {
                                                                     : `${maxValue}${unit}`}
                                                                 {t.recommendedLimit !==
                                                                     null &&
-                                                                profileLimit !==
-                                                                    null && (
-                                                                    <span className="ml-2 text-[10px] font-semibold text-gray-400">
-                                                                        (Rekom.{" "}
-                                                                        {`${t.recommendedLimit}${t.unit ?? unit}`}
-                                                                        )
-                                                                    </span>
-                                                                )}
+                                                                    profileLimit !==
+                                                                        null && (
+                                                                        <span className="ml-2 text-[10px] font-semibold text-gray-400">
+                                                                            (Rekom.{" "}
+                                                                            {`${t.recommendedLimit}${t.unit ?? unit}`}
+                                                                            )
+                                                                        </span>
+                                                                    )}
                                                             </span>
                                                         </div>
                                                         {isSugar ? (
@@ -650,7 +721,12 @@ export default function Dashboard() {
                                                                 <div
                                                                     className="bg-red-400 h-1.5 rounded-full"
                                                                     style={{
-                                                                        width: "40%",
+                                                                        width:
+                                                                            loading ||
+                                                                            progressPct ===
+                                                                                null
+                                                                                ? "0%"
+                                                                                : `${progressPct}%`,
                                                                     }}></div>
                                                             </div>
                                                         ) : isSodium ? (
@@ -658,7 +734,12 @@ export default function Dashboard() {
                                                                 <div
                                                                     className="bg-orange-400 h-1.5 rounded-full"
                                                                     style={{
-                                                                        width: "60%",
+                                                                        width:
+                                                                            loading ||
+                                                                            progressPct ===
+                                                                                null
+                                                                                ? "0%"
+                                                                                : `${progressPct}%`,
                                                                     }}></div>
                                                             </div>
                                                         ) : null}
@@ -677,19 +758,28 @@ export default function Dashboard() {
                                             <div className="text-[11px] text-gray-500 font-semibold">
                                                 Target kustom
                                             </div>
-                                            {customTargets.map((t) => (
-                                                <div
-                                                    key={t.nutrientId}
-                                                    className="flex justify-between items-center">
-                                                    <span className="text-xs text-gray-600">
-                                                        {t.nutrientName}
-                                                    </span>
-                                                    <span className="text-xs font-bold text-[#1a3129]">
-                                                        Maks. {t.dailyLimit}
-                                                        {t.unit ?? ""}
-                                                    </span>
+                                            {visibleCustomTargets.length ? (
+                                                visibleCustomTargets.map(
+                                                    (t) => (
+                                                        <div
+                                                            key={t.nutrientId}
+                                                            className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600">
+                                                                {t.nutrientName}
+                                                            </span>
+                                                            <span className="text-xs font-bold text-[#1a3129]">
+                                                                Maks.{" "}
+                                                                {t.dailyLimit}
+                                                                {t.unit ?? ""}
+                                                            </span>
+                                                        </div>
+                                                    ),
+                                                )
+                                            ) : (
+                                                <div className="text-xs text-gray-500">
+                                                    -
                                                 </div>
-                                            ))}
+                                            )}
                                         </div>
                                     ) : null}
                                 </div>
@@ -702,25 +792,46 @@ export default function Dashboard() {
                         {/* Left Column - Calorie Daily */}
                         <CaloriHarianColumn
                             loading={loading}
-                            totalCalories={data?.dailyStats?.total_calories || 0}
-                            dailyCaloriesTarget={data?.healthProfile?.daily_calories_target || 2000}
+                            totalCalories={
+                                data?.dailyStats?.total_calories || 0
+                            }
+                            dailyCaloriesTarget={
+                                data?.healthProfile?.daily_calories_target ||
+                                2000
+                            }
                             scans={data?.scans}
                             macronutrients={{
                                 protein: {
-                                    total: data?.dailyStats?.macronutrients?.protein?.total || 0,
-                                    limit: data?.dailyStats?.macronutrients?.protein?.limit || 80,
+                                    total:
+                                        data?.dailyStats?.macronutrients
+                                            ?.protein?.total || 0,
+                                    limit:
+                                        data?.dailyStats?.macronutrients
+                                            ?.protein?.limit ?? 80,
                                 },
                                 carbs: {
-                                    total: data?.dailyStats?.macronutrients?.carbs?.total || 0,
-                                    limit: data?.dailyStats?.macronutrients?.carbs?.limit || 250,
+                                    total:
+                                        data?.dailyStats?.macronutrients?.carbs
+                                            ?.total || 0,
+                                    limit:
+                                        data?.dailyStats?.macronutrients?.carbs
+                                            ?.limit ?? 250,
                                 },
                                 fat: {
-                                    total: data?.dailyStats?.macronutrients?.fat?.total || 0,
-                                    limit: data?.dailyStats?.macronutrients?.fat?.limit || 55,
+                                    total:
+                                        data?.dailyStats?.macronutrients?.fat
+                                            ?.total || 0,
+                                    limit:
+                                        data?.dailyStats?.macronutrients?.fat
+                                            ?.limit ?? 55,
                                 },
                                 fiber: {
-                                    total: data?.dailyStats?.macronutrients?.fiber?.total || 0,
-                                    limit: data?.dailyStats?.macronutrients?.fiber?.limit || 25,
+                                    total:
+                                        data?.dailyStats?.macronutrients?.fiber
+                                            ?.total || 0,
+                                    limit:
+                                        data?.dailyStats?.macronutrients?.fiber
+                                            ?.limit ?? 25,
                                 },
                             }}
                         />
@@ -729,7 +840,9 @@ export default function Dashboard() {
                         <ScanHistoryColumn
                             scans={data?.scans}
                             loading={loading}
-                            onScanClick={fetchProductDetail}
+                            onScanClick={(scan) => {
+                                void fetchProductDetail(scan);
+                            }}
                         />
 
                         {/* Right Column - Nutri-Score 5-Day Trend */}
@@ -746,6 +859,15 @@ export default function Dashboard() {
                 modalLoading={modalLoading}
                 modalError={modalError}
                 onClose={closeModal}
+            />
+
+            <MedForm
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSaved={() => {
+                    void fetchDashboardData();
+                    setIsModalOpen(false);
+                }}
             />
 
             <Footer />

@@ -17,6 +17,11 @@ interface MacronutrientResponse {
     fiber: NutrientTotal;
 }
 
+interface RestrictedNutrientResponse {
+    sugar: NutrientTotal;
+    sodium: NutrientTotal;
+}
+
 interface ScanItem {
     id: number;
     product_id: number;
@@ -69,6 +74,7 @@ interface DashboardData {
         total_calories: number;
         item_count: number;
         macronutrients: MacronutrientResponse;
+        restrictedNutrients: RestrictedNutrientResponse;
     };
     scans: ScanItem[];
     nutriScoreTrend: NutriScoreTrend[];
@@ -89,7 +95,7 @@ type DbNumber = number | string;
 
 interface MacroRow {
     name: string;
-    unit: string;
+    unit: string | null;
     total_amount: DbNumber | null;
 }
 
@@ -115,6 +121,42 @@ function normalizeDateToYmd(date: string | Date): string {
     const parsed = date instanceof Date ? date : new Date(date);
     if (Number.isNaN(parsed.getTime())) return String(date);
     return parsed.toISOString().slice(0, 10);
+}
+
+function sanitizeDailyCaloriesTarget(value: unknown): number {
+    const n = typeof value === "number" ? value : Number(value);
+    if (!Number.isFinite(n) || n <= 0) return 2000;
+    return Math.round(n);
+}
+
+function computeMacroLimitsFromCalories(dailyCaloriesTarget: number): {
+    proteinG: number;
+    carbsG: number;
+    fatG: number;
+    fiberG: number;
+} {
+    // Simple, deterministic macro split based on calorie target.
+    // 20% protein, 50% carbs, 30% fat. Fiber scales linearly from 25g @ 2000 kcal.
+    const target = sanitizeDailyCaloriesTarget(dailyCaloriesTarget);
+    const proteinG = Math.max(1, Math.round((target * 0.2) / 4));
+    const carbsG = Math.max(1, Math.round((target * 0.5) / 4));
+    const fatG = Math.max(1, Math.round((target * 0.3) / 9));
+    const fiberG = Math.max(1, Math.round((target / 2000) * 25));
+    return { proteinG, carbsG, fatG, fiberG };
+}
+
+function convertAmount(
+    value: number,
+    fromUnit: string,
+    toUnit: string,
+): number | null {
+    const from = String(fromUnit).trim().toLowerCase();
+    const to = String(toUnit).trim().toLowerCase();
+    if (!Number.isFinite(value)) return null;
+    if (from === to) return value;
+    if (from === "mg" && to === "g") return value / 1000;
+    if (from === "g" && to === "mg") return value * 1000;
+    return null;
 }
 
 export async function GET(request: NextRequest) {
@@ -177,6 +219,14 @@ export async function GET(request: NextRequest) {
                 healthProfile.birth_date as string | Date,
             );
         }
+
+        // Normalize calorie target and derive macro limits from it.
+        healthProfile.daily_calories_target = sanitizeDailyCaloriesTarget(
+            healthProfile.daily_calories_target,
+        );
+        const derivedMacroLimits = computeMacroLimitsFromCalories(
+            healthProfile.daily_calories_target,
+        );
 
         // 2b. Fetch User Medical Conditions
         const conditionsResult = await queryDatabase(
@@ -321,10 +371,49 @@ export async function GET(request: NextRequest) {
 
         // 4. Calculate Daily Macronutrients (from TODAY's scans only)
         const macronutrients: MacronutrientResponse = {
-            protein: { name: "Protein", total: 0, unit: "g", limit: 80 },
-            carbs: { name: "Karbohidrat", total: 0, unit: "g", limit: 250 },
-            fat: { name: "Lemak", total: 0, unit: "g", limit: 55 },
-            fiber: { name: "Serat", total: 0, unit: "g", limit: 25 },
+            protein: {
+                name: "Protein",
+                total: 0,
+                unit: "g",
+                limit: derivedMacroLimits.proteinG,
+            },
+            carbs: {
+                name: "Karbohidrat",
+                total: 0,
+                unit: "g",
+                limit: derivedMacroLimits.carbsG,
+            },
+            fat: {
+                name: "Lemak",
+                total: 0,
+                unit: "g",
+                limit: derivedMacroLimits.fatG,
+            },
+            fiber: {
+                name: "Serat",
+                total: 0,
+                unit: "g",
+                limit: derivedMacroLimits.fiberG,
+            },
+        };
+
+        const restrictedNutrients: RestrictedNutrientResponse = {
+            sugar: {
+                name: "Gula",
+                total: 0,
+                unit: "g",
+                limit: Number.isFinite(Number(healthProfile.daily_sugar_limit))
+                    ? Number(healthProfile.daily_sugar_limit)
+                    : 50,
+            },
+            sodium: {
+                name: "Natrium",
+                total: 0,
+                unit: "mg",
+                limit: Number.isFinite(Number(healthProfile.daily_sodium_limit))
+                    ? Number(healthProfile.daily_sodium_limit)
+                    : 2300,
+            },
         };
 
         // Fetch macros only from TODAY's scans
@@ -353,6 +442,22 @@ export async function GET(request: NextRequest) {
                 macronutrients.fat.total = amount;
             } else if (name.includes("fiber") || name.includes("serat")) {
                 macronutrients.fiber.total = amount;
+            } else if (name.includes("sugar") || name.includes("gula")) {
+                const converted = convertAmount(
+                    amount,
+                    row.unit ?? restrictedNutrients.sugar.unit,
+                    "g",
+                );
+                restrictedNutrients.sugar.total =
+                    Math.round(((converted ?? amount) as number) * 10) / 10;
+            } else if (name.includes("sodium") || name.includes("natrium")) {
+                const converted = convertAmount(
+                    amount,
+                    row.unit ?? restrictedNutrients.sodium.unit,
+                    "mg",
+                );
+                restrictedNutrients.sodium.total =
+                    Math.round(((converted ?? amount) as number) * 10) / 10;
             }
         });
 
@@ -401,6 +506,7 @@ export async function GET(request: NextRequest) {
                 total_calories,
                 item_count,
                 macronutrients,
+                restrictedNutrients,
             },
             scans,
             nutriScoreTrend,
