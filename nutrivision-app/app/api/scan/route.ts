@@ -5,6 +5,7 @@ import { getSessionUserFromRequest } from "@/lib/session";
 import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
 import { randomBytes, randomUUID } from "crypto";
+import { isCloudinaryConfigured, uploadImageBuffer } from "@/lib/cloudinary";
 
 export const runtime = "nodejs";
 
@@ -99,7 +100,7 @@ function normalizeUnit(unit: string): string {
 const NUTRIENT_ID_MAPPING: Record<string, number> = {
     // Energy/Calories → ID 9
     energy: 9,
-    "energi": 9,
+    energi: 9,
     calorie: 9,
     calories: 9,
     kcal: 9,
@@ -145,10 +146,7 @@ const NUTRIENT_ID_MAPPING: Record<string, number> = {
 };
 
 function getNutrientIdMapping(nutrientName: string): number | null {
-    const normalized = nutrientName
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, " ");
+    const normalized = nutrientName.trim().toLowerCase().replace(/\s+/g, " ");
     return NUTRIENT_ID_MAPPING[normalized] ?? null;
 }
 
@@ -192,7 +190,16 @@ async function saveScanImage(params: {
     buffer: Buffer;
     mimeType: string | null;
     fileName: string | null;
-}): Promise<{ publicPath: string; absolutePath: string }> {
+}): Promise<{ imagePath: string; cleanup?: () => Promise<void> }> {
+    if (isCloudinaryConfigured()) {
+        const uploaded = await uploadImageBuffer({
+            buffer: params.buffer,
+            mimeType: params.mimeType,
+            folder: "nutrivision/scans",
+        });
+        return { imagePath: uploaded.url };
+    }
+
     const ext = pickImageExtension({
         mimeType: params.mimeType,
         fileName: params.fileName,
@@ -207,7 +214,12 @@ async function saveScanImage(params: {
     const publicPath = `/uploads/scans/${fileName}`;
 
     await writeFile(absolutePath, params.buffer);
-    return { publicPath, absolutePath };
+    return {
+        imagePath: publicPath,
+        cleanup: async () => {
+            await unlink(absolutePath).catch(() => undefined);
+        },
+    };
 }
 
 async function persistScanToDatabase(params: {
@@ -343,7 +355,7 @@ export async function POST(req: NextRequest) {
                 },
                 { status: 500 },
             );
-        }
+        }process.env.GEMINI_MODEL || "gemini-2.5-flash"
 
         let userContext = "General healthy adult (approx. 2000 kcal daily).";
         let profileData: ProfileRow | null = null;
@@ -468,8 +480,10 @@ export async function POST(req: NextRequest) {
         // 3b. Persist scan result into database (best-effort)
         let saved: { scanId: number; productId: number } | null = null;
         let saveError: string | null = null;
-        let savedImage: { publicPath: string; absolutePath: string } | null =
-            null;
+        let savedImage: {
+            imagePath: string;
+            cleanup?: () => Promise<void>;
+        } | null = null;
         try {
             savedImage = await saveScanImage({
                 buffer: imageBuffer,
@@ -478,16 +492,16 @@ export async function POST(req: NextRequest) {
             });
             saved = await persistScanToDatabase({
                 userId: sessionUser ? Number(sessionUser.id) : null,
-                imagePath: savedImage.publicPath,
+                imagePath: savedImage.imagePath,
                 cleanedGeminiJson: cleaned,
                 parsedResult,
             });
         } catch (e: unknown) {
             console.error("Failed to save scan to database:", e);
             saveError = e instanceof Error ? e.message : "Unknown DB error";
-            // Best-effort cleanup: if image was written but DB failed, attempt to remove it.
-            if (savedImage) {
-                await unlink(savedImage.absolutePath).catch(() => undefined);
+            // Best-effort cleanup: if image was saved but DB failed, attempt to remove it.
+            if (savedImage?.cleanup) {
+                await savedImage.cleanup().catch(() => undefined);
             }
         }
 
