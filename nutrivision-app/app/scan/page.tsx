@@ -71,6 +71,33 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
+    // Attach stream to video element once it exists in the DOM
+    useEffect(() => {
+        if (!showCamera) return;
+        if (!stream) return;
+        const video = videoRef.current;
+        if (!video) return;
+
+        if (video.srcObject !== stream) {
+            video.srcObject = stream;
+        }
+
+        const tryPlay = () => {
+            const p = video.play();
+            if (p && typeof (p as Promise<void>).catch === "function") {
+                (p as Promise<void>).catch(() => {
+                    // Autoplay may be blocked; user interaction will resolve.
+                });
+            }
+        };
+
+        if (video.readyState >= 2) {
+            tryPlay();
+        } else {
+            video.onloadedmetadata = () => tryPlay();
+        }
+    }, [showCamera, stream]);
+
     // Cleanup camera stream on unmount
     useEffect(() => {
         return () => {
@@ -87,9 +114,6 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                 video: { facingMode: "environment" },
             });
             setStream(mediaStream);
-            if (videoRef.current) {
-                videoRef.current.srcObject = mediaStream;
-            }
             setShowCamera(true);
         } catch (err) {
             console.error("Error accessing camera:", err);
@@ -104,6 +128,9 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         if (stream) {
             stream.getTracks().forEach((track) => track.stop());
             setStream(null);
+        }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
         }
         setShowCamera(false);
     };

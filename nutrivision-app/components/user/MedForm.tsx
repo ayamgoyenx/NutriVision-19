@@ -51,6 +51,54 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const customTargetNutrients = useMemo(() => {
+        const isExcluded = (nutrient: Nutrient): boolean => {
+            const name = nutrient.name.trim().toLowerCase();
+
+            const isEnergy = /energi|energy|calorie|kalori/.test(name);
+            const isSugar = /sugar|gula/.test(name);
+            const isSodium = /sodium|natrium/.test(name);
+            const isProtein = /protein/.test(name);
+            const isCarbs = /carb|karbo|carbohydrate/.test(name);
+
+            // Hide total fat/macro fat targets from custom list (handled elsewhere),
+            // but keep saturated fat as a valid custom target.
+            const isSaturatedFat = /jenuh|saturated/.test(name);
+            const isFatMacro = /fat|lemak|lipid/.test(name) && !isSaturatedFat;
+
+            return (
+                isEnergy ||
+                isSugar ||
+                isSodium ||
+                isProtein ||
+                isCarbs ||
+                isFatMacro
+            );
+        };
+
+        return nutrients
+            .filter((n) => !isExcluded(n))
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [nutrients]);
+
+    const customTargetNutrientOptions = useMemo(() => {
+        const selectedIds = new Set(
+            customTargets
+                .map((t) => Number(t.nutrientId))
+                .filter((id) => Number.isInteger(id) && id > 0),
+        );
+
+        const allowedById = new Set(customTargetNutrients.map((n) => n.id));
+        const selectedButExcluded = nutrients.filter(
+            (n) => selectedIds.has(n.id) && !allowedById.has(n.id),
+        );
+
+        return [...selectedButExcluded, ...customTargetNutrients].sort((a, b) =>
+            a.name.localeCompare(b.name),
+        );
+    }, [customTargets, customTargetNutrients, nutrients]);
+
     const selectedCount = useMemo(
         () => selectedConditionIds.size,
         [selectedConditionIds],
@@ -270,7 +318,7 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
     }
 
     function addCustomTarget() {
-        const first = nutrients[0];
+        const first = customTargetNutrients[0];
         setCustomTargets((prev) => [
             ...prev,
             { nutrientId: first ? String(first.id) : "", dailyLimit: "" },
@@ -290,6 +338,34 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
         setCustomTargets((prev) => prev.filter((_, i) => i !== index));
     }
 
+    function classifyNutrientName(nutrientName: string): {
+        isEnergy: boolean;
+        isSugar: boolean;
+        isSodium: boolean;
+        isProtein: boolean;
+        isCarbs: boolean;
+        isSaturatedFat: boolean;
+        isFatMacro: boolean;
+    } {
+        const name = nutrientName.trim().toLowerCase();
+        const isEnergy = /energi|energy|calorie|kalori/.test(name);
+        const isSugar = /sugar|gula/.test(name);
+        const isSodium = /sodium|natrium/.test(name);
+        const isProtein = /protein/.test(name);
+        const isCarbs = /carb|karbo|carbohydrate/.test(name);
+        const isSaturatedFat = /jenuh|saturated/.test(name);
+        const isFatMacro = /fat|lemak|lipid/.test(name) && !isSaturatedFat;
+        return {
+            isEnergy,
+            isSugar,
+            isSodium,
+            isProtein,
+            isCarbs,
+            isSaturatedFat,
+            isFatMacro,
+        };
+    }
+
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
         if (isSaving) return;
@@ -298,6 +374,80 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
         setError(null);
 
         try {
+            const excludedCustomMappings: {
+                calories: number | null;
+                sugar: number | null;
+                sodium: number | null;
+                fat: number | null;
+            } = { calories: null, sugar: null, sodium: null, fat: null };
+
+            const customTargetsNormalized = customTargets
+                .map((t) => {
+                    const nutrientId = t.nutrientId ? Number(t.nutrientId) : 0;
+                    const dailyLimit = t.dailyLimit
+                        ? Number(t.dailyLimit)
+                        : NaN;
+
+                    const nutrient = nutrients.find((n) => n.id === nutrientId);
+                    if (
+                        nutrient &&
+                        Number.isFinite(dailyLimit) &&
+                        dailyLimit > 0
+                    ) {
+                        const cls = classifyNutrientName(nutrient.name);
+                        // If user tries to set these via custom targets, map them to
+                        // the dedicated fields instead so they actually show up.
+                        if (
+                            cls.isEnergy &&
+                            excludedCustomMappings.calories === null
+                        ) {
+                            excludedCustomMappings.calories = dailyLimit;
+                        }
+                        if (
+                            cls.isSugar &&
+                            excludedCustomMappings.sugar === null
+                        ) {
+                            excludedCustomMappings.sugar = dailyLimit;
+                        }
+                        if (
+                            cls.isSodium &&
+                            excludedCustomMappings.sodium === null
+                        ) {
+                            excludedCustomMappings.sodium = dailyLimit;
+                        }
+                        if (
+                            cls.isFatMacro &&
+                            excludedCustomMappings.fat === null
+                        ) {
+                            excludedCustomMappings.fat = dailyLimit;
+                        }
+                    }
+
+                    return { nutrientId, dailyLimit };
+                })
+                .filter(
+                    (t) =>
+                        Number.isInteger(t.nutrientId) &&
+                        t.nutrientId > 0 &&
+                        Number.isFinite(t.dailyLimit) &&
+                        t.dailyLimit > 0,
+                );
+
+            const customTargetsPayload = customTargetsNormalized.filter((t) => {
+                const nutrient = nutrients.find((n) => n.id === t.nutrientId);
+                if (!nutrient) return true;
+                const cls = classifyNutrientName(nutrient.name);
+                // Exclude nutrients that are handled by dedicated fields.
+                return !(
+                    cls.isEnergy ||
+                    cls.isSugar ||
+                    cls.isSodium ||
+                    cls.isProtein ||
+                    cls.isCarbs ||
+                    cls.isFatMacro
+                );
+            });
+
             const payload = {
                 gender: gender ? gender : null,
                 birthDate: birthDate ? birthDate : null,
@@ -308,23 +458,18 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
                 dailyTargets: {
                     calories: dailyCaloriesTarget
                         ? Number(dailyCaloriesTarget)
-                        : null,
-                    sugar: dailySugarLimit ? Number(dailySugarLimit) : null,
-                    sodium: dailySodiumLimit ? Number(dailySodiumLimit) : null,
-                    fat: dailyFatLimit ? Number(dailyFatLimit) : null,
+                        : excludedCustomMappings.calories,
+                    sugar: dailySugarLimit
+                        ? Number(dailySugarLimit)
+                        : excludedCustomMappings.sugar,
+                    sodium: dailySodiumLimit
+                        ? Number(dailySodiumLimit)
+                        : excludedCustomMappings.sodium,
+                    fat: dailyFatLimit
+                        ? Number(dailyFatLimit)
+                        : excludedCustomMappings.fat,
                 },
-                customTargets: customTargets
-                    .map((t) => ({
-                        nutrientId: t.nutrientId ? Number(t.nutrientId) : 0,
-                        dailyLimit: t.dailyLimit ? Number(t.dailyLimit) : NaN,
-                    }))
-                    .filter(
-                        (t) =>
-                            Number.isInteger(t.nutrientId) &&
-                            t.nutrientId > 0 &&
-                            Number.isFinite(t.dailyLimit) &&
-                            t.dailyLimit > 0,
-                    ),
+                customTargets: customTargetsPayload,
             };
 
             const res = await fetch("/api/user/health-profile", {
@@ -676,11 +821,19 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
                                         disabled={
                                             isLoading ||
                                             isSaving ||
-                                            nutrients.length === 0
+                                            customTargetNutrients.length === 0
                                         }
                                         className="px-3 py-1.5 bg-white border border-lime-200 text-[#2d6a3e] rounded-lg text-xs font-semibold hover:bg-lime-50 transition-colors shadow-xs">
                                         + Tambah Target
                                     </button>
+                                </div>
+
+                                <div className="text-[11px] text-gray-500 leading-relaxed mb-2">
+                                    Catatan: Kalori, Gula, dan Natrium sudah
+                                    punya batas harian di atas. Target Serat
+                                    akan muncul di kartu Kalori Harian. Target
+                                    kustom paling cocok untuk nutrisi lain (mis.
+                                    lemak jenuh, vitamin, mineral).
                                 </div>
 
                                 {nutrients.length === 0 ? (
@@ -688,6 +841,11 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
                                         {isLoading
                                             ? "Memuat daftar nutrisi..."
                                             : "Daftar nutrisi belum tersedia."}
+                                    </div>
+                                ) : customTargetNutrients.length === 0 ? (
+                                    <div className="text-xs text-gray-500">
+                                        Tidak ada nutrisi yang bisa dipilih
+                                        untuk target kustom.
                                     </div>
                                 ) : customTargets.length === 0 ? (
                                     <div className="text-xs text-gray-500">
@@ -718,18 +876,20 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
                                                     <option value="">
                                                         Pilih Nutrisi
                                                     </option>
-                                                    {nutrients.map((n) => (
-                                                        <option
-                                                            key={n.id}
-                                                            value={String(
-                                                                n.id,
-                                                            )}>
-                                                            {n.name}
-                                                            {n.unit
-                                                                ? ` (${n.unit})`
-                                                                : ""}
-                                                        </option>
-                                                    ))}
+                                                    {customTargetNutrientOptions.map(
+                                                        (n) => (
+                                                            <option
+                                                                key={n.id}
+                                                                value={String(
+                                                                    n.id,
+                                                                )}>
+                                                                {n.name}
+                                                                {n.unit
+                                                                    ? ` (${n.unit})`
+                                                                    : ""}
+                                                            </option>
+                                                        ),
+                                                    )}
                                                 </select>
                                                 <input
                                                     type="number"
@@ -761,6 +921,53 @@ export default function MedForm({ isOpen, onClose, onSaved }: MedFormProps) {
                                                     className="px-3 py-2 bg-white border border-gray-200 text-gray-500 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors">
                                                     Hapus
                                                 </button>
+
+                                                {(() => {
+                                                    const nutrientId = Number(
+                                                        t.nutrientId,
+                                                    );
+                                                    const nutrient =
+                                                        nutrients.find(
+                                                            (n) =>
+                                                                n.id ===
+                                                                nutrientId,
+                                                        );
+                                                    if (!nutrient) return null;
+                                                    const cls =
+                                                        classifyNutrientName(
+                                                            nutrient.name,
+                                                        );
+                                                    const showHint =
+                                                        cls.isEnergy ||
+                                                        cls.isSugar ||
+                                                        cls.isSodium ||
+                                                        cls.isProtein ||
+                                                        cls.isCarbs ||
+                                                        cls.isFatMacro;
+                                                    if (!showHint) return null;
+
+                                                    let msg =
+                                                        "Nutrisi ini punya pengaturan khusus, jadi tidak tampil sebagai target kustom.";
+                                                    if (cls.isEnergy) {
+                                                        msg =
+                                                            "Energi (kkal) akan dipakai sebagai Target Kalori Harian saat disimpan.";
+                                                    } else if (cls.isSugar) {
+                                                        msg =
+                                                            "Gula akan dipakai sebagai Batas Gula Harian saat disimpan.";
+                                                    } else if (cls.isSodium) {
+                                                        msg =
+                                                            "Natrium akan dipakai sebagai Batas Natrium Harian saat disimpan.";
+                                                    } else if (cls.isFatMacro) {
+                                                        msg =
+                                                            "Lemak total akan dipakai sebagai Batas Lemak Harian saat disimpan.";
+                                                    }
+
+                                                    return (
+                                                        <div className="md:col-span-3 text-[11px] text-gray-500">
+                                                            {msg}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                         ))}
                                     </div>
