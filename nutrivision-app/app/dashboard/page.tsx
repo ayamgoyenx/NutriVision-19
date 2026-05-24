@@ -224,12 +224,20 @@ export default function Dashboard() {
     }, []);
 
     const visibleCustomTargets = useMemo(() => {
-        // Macro limits are derived from daily_calories_target, so hide macro-like custom targets
+        // Macro limits are derived from daily_calories_target; we hide macro-like custom targets
         // to avoid confusing mismatches with the Kalori Harian card.
         return customTargets.filter(
             (t) => !isMacroLikeNutrientName(t.nutrientName),
         );
     }, [customTargets, isMacroLikeNutrientName]);
+
+    const customFiberLimit = useMemo(() => {
+        const fiberTarget = customTargets.find((t) => {
+            const lower = t.nutrientName.trim().toLowerCase();
+            return /fiber|serat/.test(lower);
+        });
+        return fiberTarget?.dailyLimit ?? null;
+    }, [customTargets]);
 
     const ageYears = useMemo(() => {
         const birthDate = health?.birth_date;
@@ -830,8 +838,10 @@ export default function Dashboard() {
                                         data?.dailyStats?.macronutrients?.fiber
                                             ?.total || 0,
                                     limit:
+                                        customFiberLimit ??
                                         data?.dailyStats?.macronutrients?.fiber
-                                            ?.limit ?? 25,
+                                            ?.limit ??
+                                        25,
                                 },
                             }}
                         />
