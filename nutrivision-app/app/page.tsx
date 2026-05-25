@@ -39,7 +39,7 @@ export default function Home() {
 
                     <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row items-center gap-2 sm:gap-3 md:mt-8">
                         <Link
-                            href="/scan"
+                            href="#scan2"
                             className="rounded-md bg-[#cbea7b] px-3 sm:px-5 py-1.5 sm:py-2 text-sm sm:text-base md:text-lg font-semibold text-black hover:bg-[#b8d96a] w-full sm:w-auto text-center">
                             Mulai Scan
                         </Link>
@@ -222,7 +222,7 @@ export default function Home() {
             </div>
 
             <div
-                id="scan"
+                id="scan2"
                 className="relative bg-[#EDFFDE] w-full min-h-screen py-10 md:py-20 text-[#1a3129] flex flex-col items-center justify-center gap-10 md:gap-16 overflow-hidden">
                 <div className="flex flex-col items-center gap-4 px-6 text-center">
                     <h2 className="inline-block border-b-3 border-[#cbea7b] text-3xl sm:text-4xl md:text-6xl font-bold leading-tight">

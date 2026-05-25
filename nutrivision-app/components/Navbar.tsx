@@ -173,7 +173,7 @@ export default function Navbar() {
                 {/* Desktop Navigation Links */}
                 <div className="hidden md:flex items-center gap-7" suppressHydrationWarning>
                     {/* Always show navigation links on home page or login/signup pages */}
-                    {pathname === "/" || pathname === "/login" || pathname === "/signup" ? (
+                    {pathname === "/" || pathname === "/login" || pathname === "/signup" || pathname === "/scan" || pathname === "/scan2" ? (
                         <div className="flex items-center gap-5">
                             <a
                                 href="#beranda"
@@ -198,9 +198,10 @@ export default function Navbar() {
                                 Tentang
                             </a>
                             <a
-                                href="/scan"
+                                href="#scan2"
+                                onClick={(e) => handleNavClick(e, "scan2")}
                                 className={`text-md font-regular font-sans transition ${
-                                    pathname === "/scan"
+                                    pathname === "/scan2"
                                         ? "text-lime-300 hover:text-lime-200"
                                         : "text-stone-50 hover:text-lime-300"
                                 }`}>
