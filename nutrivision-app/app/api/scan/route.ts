@@ -477,6 +477,41 @@ export async function POST(req: NextRequest) {
             throw new Error("Gemini returned invalid JSON");
         }
 
+        // Validasi: Periksa apakah Gemini berhasil mendeteksi makanan atau nutrition label
+        const root = parsedResult as { type?: unknown; product_name?: unknown };
+        const detectedType = toTrimmedString(root.type);
+        const productName = toTrimmedString(root.product_name);
+
+        if (detectedType === "invalid" || !detectedType || (detectedType !== "nutrition_label" && detectedType !== "cooked_food")) {
+            console.warn("Non-food item detected:", {
+                type: detectedType,
+                productName,
+                rawResponse: truncate(JSON.stringify(parsedResult), 1000),
+            });
+            return NextResponse.json(
+                {
+                    error: "Gambar yang kamu upload bukan label nutrition facts atau foto makanan. Silakan coba dengan gambar yang benar.",
+                    reason: "invalid_content_type",
+                    detectedType,
+                },
+                { status: 400 },
+            );
+        }
+
+        if (!productName) {
+            console.warn("Product name not detected:", {
+                type: detectedType,
+                rawResponse: truncate(JSON.stringify(parsedResult), 1000),
+            });
+            return NextResponse.json(
+                {
+                    error: "Tidak dapat mendeteksi informasi makanan dari gambar. Pastikan gambar jelas dan fokus pada label atau makanan.",
+                    reason: "no_product_detected",
+                },
+                { status: 400 },
+            );
+        }
+
         // 3b. Persist scan result into database (best-effort)
         let saved: { scanId: number; productId: number } | null = null;
         let saveError: string | null = null;

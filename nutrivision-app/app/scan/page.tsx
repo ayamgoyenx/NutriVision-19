@@ -54,6 +54,9 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
     const [tempGeminiResult, setTempGeminiResult] = useState<unknown>(null);
     const [dataSaved, setDataSaved]               = useState(false);
     const [isLoggedIn, setIsLoggedIn]             = useState<boolean | null>(null);
+    const [errorMessage, setErrorMessage]         = useState<string | null>(null);
+    const [showErrorModal, setShowErrorModal]     = useState(false);
+    const [errorModalTitle, setErrorModalTitle]   = useState<string>("Terjadi Kesalahan");
     // ─────────────────────────────────────────────────────────────────────────
 
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -97,7 +100,9 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
             setShowCamera(true);
         } catch (err) {
             console.error("Error accessing camera:", err);
-            alert("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
+            setErrorMessage("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
+            setErrorModalTitle("❌ Akses Kamera Ditolak");
+            setShowErrorModal(true);
         }
     };
 
@@ -147,6 +152,7 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         setFile(f);
         setPreviewUrl(URL.createObjectURL(f));
         setNutritionResult(null);
+        setErrorMessage(null);  // Clear error when new file is selected
     }
 
     function handleDragOver(e: DragEvent<HTMLDivElement>) {
@@ -180,6 +186,7 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         if (!file || !previewUrl) return;
         setIsAnalyzing(true);
         setDataSaved(false);
+        setErrorMessage(null);
 
         try {
             const formData = new FormData();
@@ -193,7 +200,20 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
             if (!apiResponse.ok) {
                 const errorData = await apiResponse.json();
                 console.error("API Error:", errorData);
-                alert(`Analisis gagal: ${errorData.error || "Terjadi kesalahan"}`);
+                
+                // Tampilkan error message yang lebih user-friendly
+                const errorMsg = errorData.error || "Terjadi kesalahan saat menganalisis gambar";
+                setErrorMessage(errorMsg);
+                
+                // Modal untuk non-food items
+                if (errorData.reason === "invalid_content_type") {
+                    setErrorModalTitle("❌ Gambar Tidak Valid");
+                } else if (errorData.reason === "no_product_detected") {
+                    setErrorModalTitle("⚠️ Makanan Tidak Terdeteksi");
+                } else {
+                    setErrorModalTitle("❌ Analisis Gagal");
+                }
+                setShowErrorModal(true);
                 return;
             }
 
@@ -203,13 +223,17 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
             setIsLoggedIn(apiData.isLoggedIn ?? false);
             setDataSaved(apiData.db?.saved === true);
             setTempGeminiResult(apiData.result);
+            setErrorMessage(null);
 
             // Buka modal untuk input nama produk
             setProductName(apiData.result?.product_name ?? "");
             setShowProductModal(true);
         } catch (error) {
             console.error("Analisis gagal:", error);
-            alert("Gagal menganalisis gambar. Silakan coba lagi.");
+            const errorMsg = error instanceof Error ? error.message : "Gagal menganalisis gambar";
+            setErrorMessage(errorMsg);
+            setErrorModalTitle("❌ Terjadi Kesalahan");
+            setShowErrorModal(true);
         } finally {
             setIsAnalyzing(false);
         }
@@ -395,6 +419,26 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
     return (
         <div className="min-h-screen bg-[#edffde] font-sans relative overflow-hidden">
 
+            {/* ── Modal Error ─────────────────────────────────────────────── */}
+            {showErrorModal && (
+                <div className="fixed inset-0 bg-black/50 z-[350] flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white rounded-[24px] p-6 md:p-8 max-w-sm w-full shadow-2xl">
+                        <div className="text-center">
+                            <h2 className="text-2xl font-bold text-[#1a3129] mb-2">{errorModalTitle}</h2>
+                            <p className="text-base text-[#262626] opacity-90 mb-6 leading-relaxed">
+                                {errorMessage}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            className="w-full px-4 py-3 rounded-lg bg-[#cbea7b] text-black font-semibold hover:bg-[#b8d96a] transition-all"
+                            onClick={() => setShowErrorModal(false)}>
+                            OK, Coba Lagi
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* ── Modal Nama Produk (dari doc 12) ─────────────────────────── */}
             {showProductModal && (
                 <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4">
@@ -452,6 +496,13 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                             : isLoggedIn
                                 ? "⚠ Data tidak tersimpan (profil belum lengkap)"
                                 : "⚠ Data hanya ditampilkan sementara — login untuk menyimpan"}
+                    </div>
+                )}
+
+                {/* Error Alert */}
+                {errorMessage && (
+                    <div className="p-4 rounded-lg text-sm font-medium text-center bg-red-100 text-red-800 border border-red-300 animate-in fade-in duration-200">
+                        ❌ {errorMessage}
                     </div>
                 )}
 
