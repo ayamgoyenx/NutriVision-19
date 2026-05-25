@@ -8,6 +8,7 @@ import {
     Camera,
     X,
     RotateCcw,
+    Info,                         // ← ditambahkan
 } from "lucide-react";
 import {
     type NutritionGrade,
@@ -22,33 +23,12 @@ interface Props {
     onAnalyze?: (file: File, previewUrl: string) => void;
 }
 
-// Grade colors matching Nutri-Score system
 const GRADE_COLORS = {
-    A: {
-        bg: "#00b67a",
-        text: "#ffffff",
-        glow: "0 0 40px #00b67a, 0 0 80px #00b67a",
-    },
-    B: {
-        bg: "#85bb2f",
-        text: "#ffffff",
-        glow: "0 0 40px #85bb2f, 0 0 80px #85bb2f",
-    },
-    C: {
-        bg: "#ffb800",
-        text: "#ffffff",
-        glow: "0 0 40px #ffb800, 0 0 80px #ffb800",
-    },
-    D: {
-        bg: "#e2703a",
-        text: "#ffffff",
-        glow: "0 0 40px #e2703a, 0 0 80px #e2703a",
-    },
-    E: {
-        bg: "#ef3f23",
-        text: "#ffffff",
-        glow: "0 0 40px #ef3f23, 0 0 80px #ef3f23",
-    },
+    A: { bg: "#00b67a", text: "#ffffff", glow: "0 0 40px #00b67a, 0 0 80px #00b67a" },
+    B: { bg: "#85bb2f", text: "#ffffff", glow: "0 0 40px #85bb2f, 0 0 80px #85bb2f" },
+    C: { bg: "#ffb800", text: "#ffffff", glow: "0 0 40px #ffb800, 0 0 80px #ffb800" },
+    D: { bg: "#e2703a", text: "#ffffff", glow: "0 0 40px #e2703a, 0 0 80px #e2703a" },
+    E: { bg: "#ef3f23", text: "#ffffff", glow: "0 0 40px #ef3f23, 0 0 80px #ef3f23" },
 };
 
 const GRADE_LABELS = {
@@ -60,54 +40,54 @@ const GRADE_LABELS = {
 };
 
 export default function NutritionScanner({ onAnalyze }: Props = {}) {
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-    const [file, setFile] = useState<File | null>(null);
-    const [isDragging, setIsDragging] = useState(false);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [nutritionResult, setNutritionResult] =
-        useState<NutritionScoreResult | null>(null);
-    const [showCamera, setShowCamera] = useState(false);
-    const [stream, setStream] = useState<MediaStream | null>(null);
+    const [previewUrl, setPreviewUrl]     = useState<string | null>(null);
+    const [file, setFile]                 = useState<File | null>(null);
+    const [isDragging, setIsDragging]     = useState(false);
+    const [isAnalyzing, setIsAnalyzing]   = useState(false);
+    const [nutritionResult, setNutritionResult] = useState<NutritionScoreResult | null>(null);
+    const [showCamera, setShowCamera]     = useState(false);
+    const [stream, setStream]             = useState<MediaStream | null>(null);
+
+    // ── States dialog nama produk (dari doc 12) ───────────────────────────────
+    const [showProductModal, setShowProductModal] = useState(false);
+    const [productName, setProductName]           = useState("");
+    const [tempGeminiResult, setTempGeminiResult] = useState<unknown>(null);
+    const [dataSaved, setDataSaved]               = useState(false);
+    const [isLoggedIn, setIsLoggedIn]             = useState<boolean | null>(null);
+    // ─────────────────────────────────────────────────────────────────────────
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Attach stream to video element once it exists in the DOM
+    // Attach stream to video element
     useEffect(() => {
         if (!showCamera) return;
         if (!stream) return;
         const video = videoRef.current;
         if (!video) return;
 
-        if (video.srcObject !== stream) {
-            video.srcObject = stream;
-        }
+        if (video.srcObject !== stream) video.srcObject = stream;
 
         const tryPlay = () => {
             const p = video.play();
             if (p && typeof (p as Promise<void>).catch === "function") {
-                (p as Promise<void>).catch(() => {
-                    // Autoplay may be blocked; user interaction will resolve.
-                });
+                (p as Promise<void>).catch(() => undefined);
             }
         };
 
-        if (video.readyState >= 2) {
-            tryPlay();
-        } else {
-            video.onloadedmetadata = () => tryPlay();
-        }
+        if (video.readyState >= 2) tryPlay();
+        else video.onloadedmetadata = () => tryPlay();
     }, [showCamera, stream]);
 
-    // Cleanup camera stream on unmount
+    // Cleanup stream on unmount
     useEffect(() => {
         return () => {
-            if (stream) {
-                stream.getTracks().forEach((track) => track.stop());
-            }
+            if (stream) stream.getTracks().forEach((track) => track.stop());
         };
     }, [stream]);
 
-    // Start camera
+    // ── Camera ────────────────────────────────────────────────────────────────
+
     const startCamera = async () => {
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -117,45 +97,31 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
             setShowCamera(true);
         } catch (err) {
             console.error("Error accessing camera:", err);
-            alert(
-                "Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.",
-            );
+            alert("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
         }
     };
 
-    // Stop camera
     const stopCamera = () => {
         if (stream) {
             stream.getTracks().forEach((track) => track.stop());
             setStream(null);
         }
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
+        if (videoRef.current) videoRef.current.srcObject = null;
         setShowCamera(false);
     };
 
-    // Capture photo from camera
     const capturePhoto = () => {
         if (!videoRef.current) return;
-
         const canvas = document.createElement("canvas");
         canvas.width = videoRef.current.videoWidth;
         canvas.height = videoRef.current.videoHeight;
-
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-
         ctx.drawImage(videoRef.current, 0, 0);
-
         canvas.toBlob(
             (blob) => {
                 if (blob) {
-                    const capturedFile = new File(
-                        [blob],
-                        "camera-capture.jpg",
-                        { type: "image/jpeg" },
-                    );
+                    const capturedFile = new File([blob], "camera-capture.jpg", { type: "image/jpeg" });
                     setFile(capturedFile);
                     setPreviewUrl(canvas.toDataURL("image/jpeg"));
                     setNutritionResult(null);
@@ -167,7 +133,6 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         );
     };
 
-    // Retake photo
     const retakePhoto = () => {
         setFile(null);
         setPreviewUrl(null);
@@ -175,11 +140,12 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         startCamera();
     };
 
+    // ── File handling ─────────────────────────────────────────────────────────
+
     function handleFile(f: File) {
         if (!f.type.startsWith("image/")) return;
         setFile(f);
-        const url = URL.createObjectURL(f);
-        setPreviewUrl(url);
+        setPreviewUrl(URL.createObjectURL(f));
         setNutritionResult(null);
     }
 
@@ -200,26 +166,25 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         if (f) handleFile(f);
     }
 
-    // Handle upload button click
     function handleUploadClick() {
         inputRef.current?.click();
     }
 
-    // Handle camera button click
     function handleCameraClick() {
         startCamera();
     }
 
+    // ── Analyze — simpan result sementara, lalu buka modal nama produk ────────
+
     async function handleAnalyze() {
         if (!file || !previewUrl) return;
         setIsAnalyzing(true);
+        setDataSaved(false);
 
         try {
-            // Prepare FormData with image for API
             const formData = new FormData();
             formData.append("image", file);
 
-            // Call Gemini API via /api/scan endpoint
             const apiResponse = await fetch("/api/scan", {
                 method: "POST",
                 body: formData,
@@ -228,20 +193,20 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
             if (!apiResponse.ok) {
                 const errorData = await apiResponse.json();
                 console.error("API Error:", errorData);
-                alert(
-                    `Analisis gagal: ${errorData.error || "Terjadi kesalahan"}`,
-                );
-                setIsAnalyzing(false);
+                alert(`Analisis gagal: ${errorData.error || "Terjadi kesalahan"}`);
                 return;
             }
 
             const apiData = await apiResponse.json();
-            const geminiResult = apiData.result;
 
-            // Build UI result directly from Gemini output (no dummy defaults)
-            const result = buildNutritionResultFromGemini(geminiResult);
-            setNutritionResult(result);
-            onAnalyze?.(file, previewUrl);
+            // Simpan status login & hasil scan sementara
+            setIsLoggedIn(apiData.isLoggedIn ?? false);
+            setDataSaved(apiData.db?.saved === true);
+            setTempGeminiResult(apiData.result);
+
+            // Buka modal untuk input nama produk
+            setProductName(apiData.result?.product_name ?? "");
+            setShowProductModal(true);
         } catch (error) {
             console.error("Analisis gagal:", error);
             alert("Gagal menganalisis gambar. Silakan coba lagi.");
@@ -250,26 +215,39 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         }
     }
 
-    type GeminiNutrient = { name: string; amount: number; unit: string };
-    type GeminiScanResult = {
-        nutrients?: GeminiNutrient[];
-        nutrition_grade?: string;
-    };
+    // ── Konfirmasi nama produk → tampilkan hasil ──────────────────────────────
+
+    function handleConfirmProductName() {
+        if (!tempGeminiResult) return;
+
+        const result = buildNutritionResultFromGemini(tempGeminiResult);
+        setNutritionResult(result);
+        onAnalyze?.(file!, previewUrl!);
+
+        setShowProductModal(false);
+        setTempGeminiResult(null);
+    }
+
+    function handleCancelModal() {
+        setShowProductModal(false);
+        setTempGeminiResult(null);
+        setProductName("");
+    }
+
+    // ── Result builder (dari doc 13 / GitHub) ────────────────────────────────
+
+    type GeminiNutrient  = { name: string; amount: number; unit: string };
+    type GeminiScanResult = { nutrients?: GeminiNutrient[]; nutrition_grade?: string; product_name?: string };
 
     function toGeminiNutrients(value: unknown): GeminiNutrient[] {
         if (!Array.isArray(value)) return [];
         const out: GeminiNutrient[] = [];
         for (const item of value) {
             if (!item || typeof item !== "object") continue;
-            const it = item as {
-                name?: unknown;
-                amount?: unknown;
-                unit?: unknown;
-            };
-            const name = typeof it.name === "string" ? it.name.trim() : "";
-            const unit = typeof it.unit === "string" ? it.unit.trim() : "";
-            const amount =
-                typeof it.amount === "number" ? it.amount : Number(it.amount);
+            const it = item as { name?: unknown; amount?: unknown; unit?: unknown };
+            const name   = typeof it.name   === "string" ? it.name.trim()   : "";
+            const unit   = typeof it.unit   === "string" ? it.unit.trim()   : "";
+            const amount = typeof it.amount === "number" ? it.amount : Number(it.amount);
             if (!name || !unit || !Number.isFinite(amount)) continue;
             out.push({ name, unit, amount });
         }
@@ -280,16 +258,11 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         return s.trim().toLowerCase().replace(/\s+/g, " ");
     }
 
-    function findNutrientAmount(
-        nutrients: GeminiNutrient[],
-        candidates: string[],
-    ): number | null {
-        const normalizedCandidates = candidates.map(normalizeName);
+    function findNutrientAmount(nutrients: GeminiNutrient[], candidates: string[]): number | null {
+        const nc = candidates.map(normalizeName);
         for (const n of nutrients) {
             const name = normalizeName(n.name);
-            if (normalizedCandidates.some((c) => name.includes(c))) {
-                return n.amount;
-            }
+            if (nc.some((c) => name.includes(c))) return n.amount;
         }
         return null;
     }
@@ -297,14 +270,11 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
     function coerceGrade(value: unknown): NutritionGrade | null {
         if (typeof value !== "string") return null;
         const g = value.trim().toUpperCase();
-        if (g === "A" || g === "B" || g === "C" || g === "D" || g === "E") {
-            return g;
-        }
+        if (g === "A" || g === "B" || g === "C" || g === "D" || g === "E") return g;
         return null;
     }
 
     function gradeToScore(grade: NutritionGrade): number {
-        // Keep consistent with backend mapping
         if (grade === "A") return 85;
         if (grade === "B") return 70;
         if (grade === "C") return 55;
@@ -312,98 +282,54 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         return 20;
     }
 
-    function computeBreakdownItem(
-        nutrient: NutrientKey,
-        actual: number,
-    ): NutrientAnalysis {
+    function computeBreakdownItem(nutrient: NutrientKey, actual: number): NutrientAnalysis {
         const recommended = DAILY_RECOMMENDED[nutrient];
-        const percentage = recommended > 0 ? (actual / recommended) * 100 : 0;
-
-        const isLimited =
-            nutrient === "sugar" ||
-            nutrient === "sodium" ||
-            nutrient === "cholesterol";
+        const percentage  = recommended > 0 ? (actual / recommended) * 100 : 0;
+        const isLimited   = nutrient === "sugar" || nutrient === "sodium" || nutrient === "cholesterol";
 
         let status: "good" | "low" | "high";
-        if (isLimited) {
-            status = actual <= recommended ? "good" : "high";
-        } else {
-            status = actual >= recommended ? "good" : "low";
-        }
+        if (isLimited) status = actual <= recommended ? "good" : "high";
+        else           status = actual >= recommended ? "good" : "low";
 
         let score = 0;
         if (isLimited) {
-            if (actual <= recommended) score = 100;
+            if      (actual <= recommended * 1.00) score = 100;
             else if (actual <= recommended * 1.25) score = 80;
-            else if (actual <= recommended * 1.5) score = 60;
-            else if (actual <= recommended * 2) score = 40;
-            else score = 20;
+            else if (actual <= recommended * 1.50) score = 60;
+            else if (actual <= recommended * 2.00) score = 40;
+            else                                    score = 20;
         } else {
-            if (percentage >= 100) score = 100;
-            else if (percentage >= 90) score = 90;
-            else if (percentage >= 75) score = 75;
-            else if (percentage >= 50) score = 50;
-            else if (percentage >= 25) score = 25;
-            else score = 10;
+            if      (percentage >= 100) score = 100;
+            else if (percentage >=  90) score = 90;
+            else if (percentage >=  75) score = 75;
+            else if (percentage >=  50) score = 50;
+            else if (percentage >=  25) score = 25;
+            else                         score = 10;
         }
 
-        return {
-            nutrient,
-            actual,
-            recommended,
-            percentage,
-            score,
-            status,
-        };
+        return { nutrient, actual, recommended, percentage, score, status };
     }
 
-    function buildNutritionResultFromGemini(
-        value: unknown,
-    ): NutritionScoreResult {
-        const root = (value ?? {}) as GeminiScanResult;
-        const nutrients = toGeminiNutrients(
-            (root as { nutrients?: unknown }).nutrients,
-        );
-
-        const grade =
-            coerceGrade(
-                (root as { nutrition_grade?: unknown }).nutrition_grade,
-            ) ?? "C";
+    function buildNutritionResultFromGemini(value: unknown): NutritionScoreResult {
+        const root      = (value ?? {}) as GeminiScanResult;
+        const nutrients = toGeminiNutrients((root as { nutrients?: unknown }).nutrients);
+        const grade     = coerceGrade((root as { nutrition_grade?: unknown }).nutrition_grade) ?? "C";
         const overallScore = gradeToScore(grade);
 
-        // Only include nutrients that Gemini prompt guarantees (no dummy fallbacks)
-        const calories = findNutrientAmount(nutrients, [
-            "energy",
-            "calorie",
-            "calories",
-            "kkal",
-            "kcal",
-        ]);
-        const protein = findNutrientAmount(nutrients, ["protein"]);
-        const fat = findNutrientAmount(nutrients, ["fat", "lemak", "lipid"]);
-        const carbohydrates = findNutrientAmount(nutrients, [
-            "carbohydrate",
-            "carbohydrates",
-            "karbohidrat",
-            "carb",
-        ]);
-        const sugar = findNutrientAmount(nutrients, ["sugar", "gula"]);
-        const sodium = findNutrientAmount(nutrients, ["sodium", "natrium"]);
+        const calories      = findNutrientAmount(nutrients, ["energy", "calorie", "calories", "kkal", "kcal"]);
+        const protein       = findNutrientAmount(nutrients, ["protein"]);
+        const fat           = findNutrientAmount(nutrients, ["fat", "lemak", "lipid"]);
+        const carbohydrates = findNutrientAmount(nutrients, ["carbohydrate", "carbohydrates", "karbohidrat", "carb"]);
+        const sugar         = findNutrientAmount(nutrients, ["sugar", "gula"]);
+        const sodium        = findNutrientAmount(nutrients, ["sodium", "natrium"]);
 
         const breakdown: NutrientAnalysis[] = [];
-        if (calories !== null)
-            breakdown.push(computeBreakdownItem("calories", calories));
-        if (protein !== null)
-            breakdown.push(computeBreakdownItem("protein", protein));
-        if (carbohydrates !== null)
-            breakdown.push(
-                computeBreakdownItem("carbohydrates", carbohydrates),
-            );
-        if (fat !== null) breakdown.push(computeBreakdownItem("fat", fat));
-        if (sugar !== null)
-            breakdown.push(computeBreakdownItem("sugar", sugar));
-        if (sodium !== null)
-            breakdown.push(computeBreakdownItem("sodium", sodium));
+        if (calories      !== null) breakdown.push(computeBreakdownItem("calories",      calories));
+        if (protein       !== null) breakdown.push(computeBreakdownItem("protein",       protein));
+        if (carbohydrates !== null) breakdown.push(computeBreakdownItem("carbohydrates", carbohydrates));
+        if (fat           !== null) breakdown.push(computeBreakdownItem("fat",           fat));
+        if (sugar         !== null) breakdown.push(computeBreakdownItem("sugar",         sugar));
+        if (sodium        !== null) breakdown.push(computeBreakdownItem("sodium",        sodium));
 
         return {
             userId: "local",
@@ -414,53 +340,33 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         };
     }
 
-    // Render glowing grade display
+    // ── Render helpers ────────────────────────────────────────────────────────
+
     function renderGradeDisplay(grade: NutritionGrade) {
         const colors = GRADE_COLORS[grade];
-        const label = GRADE_LABELS[grade];
-
+        const label  = GRADE_LABELS[grade];
         return (
             <div id="scan" className="flex flex-col items-center gap-4">
                 <div
                     className="relative w-32 h-32 rounded-full flex items-center justify-center font-bold text-6xl"
-                    style={{
-                        backgroundColor: colors.bg,
-                        color: colors.text,
-                        boxShadow: colors.glow,
-                    }}>
+                    style={{ backgroundColor: colors.bg, color: colors.text, boxShadow: colors.glow }}>
                     {grade}
-                    {/* Pulsing ring animation */}
-                    <span
-                        className="absolute inset-0 rounded-full animate-ping opacity-50"
-                        style={{ backgroundColor: colors.bg }}
-                    />
+                    <span className="absolute inset-0 rounded-full animate-ping opacity-50" style={{ backgroundColor: colors.bg }} />
                 </div>
-                <p className="text-xl font-bold" style={{ color: colors.bg }}>
-                    {label}
-                </p>
-                <p className="text-2xl font-bold text-[#1a3129]">
-                    Score: {nutritionResult?.overallScore}
-                </p>
+                <p className="text-xl font-bold" style={{ color: colors.bg }}>{label}</p>
+                <p className="text-2xl font-bold text-[#1a3129]">Score: {nutritionResult?.overallScore}</p>
             </div>
         );
     }
 
-    // Render nutrient breakdown
     function renderNutrientBreakdown() {
         if (!nutritionResult) return null;
-
         return (
             <div className="w-full mt-6 space-y-3">
-                <h3 className="text-lg font-bold text-[#1a3129] mb-4">
-                    Detail Nutrisi
-                </h3>
+                <h3 className="text-lg font-bold text-[#1a3129] mb-4">Detail Nutrisi</h3>
                 {nutritionResult.nutrientBreakdown.slice(0, 8).map((item) => (
-                    <div
-                        key={item.nutrient}
-                        className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-[#262626] capitalize">
-                            {item.nutrient}
-                        </span>
+                    <div key={item.nutrient} className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-[#262626] capitalize">{item.nutrient}</span>
                         <div className="flex items-center gap-2">
                             <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                                 <div
@@ -468,11 +374,9 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                                     style={{
                                         width: `${Math.min(item.percentage, 100)}%`,
                                         backgroundColor:
-                                            item.status === "good"
-                                                ? "#00b67a"
-                                                : item.status === "high"
-                                                  ? "#ef3f23"
-                                                  : "#ffb800",
+                                            item.status === "good" ? "#00b67a"
+                                            : item.status === "high" ? "#ef3f23"
+                                            : "#ffb800",
                                     }}
                                 />
                             </div>
@@ -486,19 +390,71 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
         );
     }
 
+    // ── JSX ───────────────────────────────────────────────────────────────────
+
     return (
         <div className="min-h-screen bg-[#edffde] font-sans relative overflow-hidden">
+
+            {/* ── Modal Nama Produk (dari doc 12) ─────────────────────────── */}
+            {showProductModal && (
+                <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[24px] p-6 md:p-8 max-w-sm w-full shadow-2xl animate-in fade-in duration-200">
+                        <h2 className="text-2xl font-bold text-[#1a3129] mb-2">Nama Produk</h2>
+                        <p className="text-sm text-[#262626] opacity-70 mb-6">
+                            Konfirmasi atau ubah nama produk sebelum menampilkan hasil analisis
+                        </p>
+                        <input
+                            type="text"
+                            placeholder="Contoh: Mie Instan Merek X"
+                            value={productName}
+                            onChange={(e) => setProductName(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleConfirmProductName(); }}
+                            className="w-full px-4 py-3 border-2 border-[#cbea7b] rounded-lg text-[#1a3129] placeholder-[#262626]/40 focus:outline-none focus:border-[#b8d96a] mb-6"
+                            autoFocus
+                        />
+                        <div className="flex gap-3">
+                            <button
+                                type="button"
+                                className="flex-1 px-4 py-2 rounded-lg bg-gray-200 text-[#1a3129] font-semibold hover:bg-gray-300 transition-all"
+                                onClick={handleCancelModal}>
+                                Batal
+                            </button>
+                            <button
+                                type="button"
+                                className="flex-1 px-4 py-2 rounded-lg bg-[#cbea7b] text-black font-semibold hover:bg-[#b8d96a] transition-all"
+                                onClick={handleConfirmProductName}>
+                                Lihat Hasil
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Loading Overlay */}
             {isAnalyzing && (
                 <div className="fixed inset-0 bg-[#edffde]/80 backdrop-blur-md z-[200] flex flex-col items-center justify-center gap-4 animate-in fade-in duration-200">
                     <Loader2 className="w-14 h-14 text-[#1a3129] animate-spin" />
-                    <p className="text-xl font-bold text-[#1a3129]">
-                        Menganalisis nutrisi...
-                    </p>
+                    <p className="text-xl font-bold text-[#1a3129]">Menganalisis nutrisi...</p>
                 </div>
             )}
 
             <main className="mx-auto w-full max-w-7xl px-4 sm:px-6 md:px-8 py-10 md:py-16 flex flex-col gap-10 sm:gap-4">
+
+                {/* Data Saved Indicator (dari doc 12) */}
+                {nutritionResult && (
+                    <div className={`p-3 rounded-lg text-sm font-medium text-center ${
+                        dataSaved
+                            ? "bg-blue-100 text-blue-800 border border-blue-300"
+                            : "bg-yellow-100 text-yellow-800 border border-yellow-300"
+                    }`}>
+                        {dataSaved
+                            ? `✓ Data berhasil disimpan${productName ? ` (${productName})` : ""}`
+                            : isLoggedIn
+                                ? "⚠ Data tidak tersimpan (profil belum lengkap)"
+                                : "⚠ Data hanya ditampilkan sementara — login untuk menyimpan"}
+                    </div>
+                )}
+
                 {/* Header Section */}
                 <div className="flex flex-col items-center gap-4 text-center">
                     <p className="inline-block border-b-3 border-[#cbea7b] pb-2 font-bold text-[#1a3129] text-lg sm:text-2xl">
@@ -512,18 +468,18 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
 
                 {/* Two Column Layout */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 md:gap-8 sm:gap-2">
+
                     {/* Left Column - Scan Area */}
                     <div className="flex flex-col gap-6 sm:gap-2">
                         <div className="p-4 md:p-6 bg-[#FAFDF2] rounded-[24px] md:rounded-[32px] shadow-sm">
                             <div
                                 className={`relative flex flex-col items-center justify-center border-2 border-dotted border-[#1A3129] w-full min-h-[350px] rounded-[16px] transition-all ${
-                                    isDragging
-                                        ? "bg-lime-100/50 border-[#3d8a5e]"
-                                        : ""
+                                    isDragging ? "bg-lime-100/50 border-[#3d8a5e]" : ""
                                 }`}
                                 onDragOver={handleDragOver}
                                 onDragLeave={() => setIsDragging(false)}
                                 onDrop={handleDrop}>
+
                                 {previewUrl ? (
                                     <div className="p-4 w-full h-full flex flex-col items-center">
                                         <img
@@ -535,20 +491,13 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                                             <button
                                                 type="button"
                                                 className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#cbea7b] text-sm font-bold text-black hover:bg-[#b8d96a] transition-all"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    retakePhoto();
-                                                }}>
-                                                <RotateCcw className="w-4 h-4" />
-                                                Ambil Ulang
+                                                onClick={(e) => { e.stopPropagation(); retakePhoto(); }}>
+                                                <RotateCcw className="w-4 h-4" /> Ambil Ulang
                                             </button>
                                             <button
                                                 type="button"
                                                 className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#1a3129] text-sm font-bold text-[#cbea7b] hover:bg-[#2d5a45] transition-all"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleUploadClick();
-                                                }}>
+                                                onClick={(e) => { e.stopPropagation(); handleUploadClick(); }}>
                                                 Upload Lain
                                             </button>
                                         </div>
@@ -565,22 +514,14 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                                             <button
                                                 type="button"
                                                 className="flex items-center gap-2 px-6 py-3 rounded-full bg-[#ef3f23] text-white font-bold hover:bg-[#d63628] transition-all"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    stopCamera();
-                                                }}>
-                                                <X className="w-5 h-5" />
-                                                Batal
+                                                onClick={(e) => { e.stopPropagation(); stopCamera(); }}>
+                                                <X className="w-5 h-5" /> Batal
                                             </button>
                                             <button
                                                 type="button"
                                                 className="flex items-center gap-2 px-8 py-3 rounded-full bg-[#1a3129] text-[#cbea7b] font-bold hover:bg-[#2d5a45] transition-all"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    capturePhoto();
-                                                }}>
-                                                <Camera className="w-5 h-5" />
-                                                Ambil Foto
+                                                onClick={(e) => { e.stopPropagation(); capturePhoto(); }}>
+                                                <Camera className="w-5 h-5" /> Ambil Foto
                                             </button>
                                         </div>
                                     </div>
@@ -591,45 +532,32 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                                         </div>
                                         <div className="text-center">
                                             <h2 className="text-xl font-bold text-[#1a3129]">
-                                                Upload atau Foto Nutrition Facts
-                                                Di sini!
+                                                Upload atau Foto Nutrition Facts Di sini!
                                             </h2>
-                                            <p className="mt-2 text-sm  text-[#262626] opacity-60">
-                                                Pilih salah satu opsi di bawah
-                                                ini untuk menambahkan nutrition
-                                                facts
-                                                <br />
-                                                dari produk yang ingin kamu
-                                                analisis
+                                            <p className="mt-2 text-sm text-[#262626] opacity-60">
+                                                Pilih salah satu opsi di bawah ini untuk menambahkan nutrition facts
+                                                <br />dari produk yang ingin kamu analisis
                                             </p>
                                         </div>
                                         <div className="flex flex-col sm:flex-row gap-4">
                                             <button
                                                 type="button"
-                                                className="flex items-center gap-2 rounded-full bg-[#cbea7b] px-8  py-3 text-sm  font-bold text-black hover:bg-[#b8d96a] transition-all active:scale-95 "
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleUploadClick();
-                                                }}>
+                                                className="flex items-center gap-2 rounded-full bg-[#cbea7b] px-8 py-3 text-sm font-bold text-black hover:bg-[#b8d96a] transition-all active:scale-95"
+                                                onClick={(e) => { e.stopPropagation(); handleUploadClick(); }}>
                                                 <ArrowUpFromLine className="w-5 h-5" />
                                                 Upload Nutrition Facts
                                             </button>
                                             <button
                                                 type="button"
-                                                className="flex items-center gap-2 rounded-full bg-[#1a3129] px-8  py-3 text-sm  font-bold text-[#cbea7b] hover:bg-[#2d5a45] transition-all active:scale-95 "
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleCameraClick();
-                                                }}>
+                                                className="flex items-center gap-2 rounded-full bg-[#1a3129] px-8 py-3 text-sm font-bold text-[#cbea7b] hover:bg-[#2d5a45] transition-all active:scale-95"
+                                                onClick={(e) => { e.stopPropagation(); handleCameraClick(); }}>
                                                 <Camera className="w-5 h-5" />
                                                 Foto Nutrition Facts
                                             </button>
                                         </div>
                                         <div className="absolute mt-4 bottom-2 text-center w-full px-4">
                                             <p className="mt-4 text-xs text-[#FB2C36] opacity-60">
-                                                Pastikan file yang diupload PNG,
-                                                JPG, WEBP berukuran maks. 10 MB
-                                                <br />
+                                                Pastikan file yang diupload PNG, JPG, WEBP berukuran maks. 10 MB
                                             </p>
                                         </div>
                                     </div>
@@ -638,12 +566,9 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                         </div>
 
                         {/* Analyze Button */}
-                        <div
-                            className={`flex flex-col items-center gap-3 transition-all duration-300 ${
-                                file
-                                    ? "opacity-100 translate-y-0"
-                                    : "opacity-0 translate-y-4 pointer-events-none"
-                            }`}>
+                        <div className={`flex flex-col items-center gap-3 transition-all duration-300 ${
+                            file ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"
+                        }`}>
                             <button
                                 className="flex items-center gap-3 rounded-full bg-[#1a3129] px-10 py-4 text-lg md:text-xl font-bold text-[#cbea7b] hover:bg-[#2d5a45] transition-all shadow-xl active:scale-95"
                                 onClick={handleAnalyze}>
@@ -654,6 +579,18 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                                 Proses biasanya selesai dalam 2–5 detik
                             </span>
                         </div>
+
+                        {/* Login notice (dari doc 12) */}
+                        {isLoggedIn === false && !nutritionResult && (
+                            <div className="mt-4 mx-auto max-w-md w-full animate-in fade-in duration-200">
+                                <div className="flex items-start gap-3 p-3 bg-white rounded-lg shadow-sm border border-gray-100">
+                                    <Info className="w-5 h-5 mt-0.5 text-[#1a3129] opacity-80 shrink-0" />
+                                    <p className="text-sm text-[#262626]">
+                                        Data tidak akan disimpan ke database jika pengguna belum login.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Right Column - Results Area */}
@@ -661,10 +598,7 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                         <div className="p-6 md:p-8 bg-[#FAFDF2] rounded-[24px] md:rounded-[32px] shadow-sm min-h-[400px]">
                             {nutritionResult ? (
                                 <div className="flex flex-col items-center">
-                                    {/* Glowing Grade Display */}
                                     {renderGradeDisplay(nutritionResult.grade)}
-
-                                    {/* Nutrient Breakdown */}
                                     {renderNutrientBreakdown()}
                                 </div>
                             ) : (
@@ -672,12 +606,9 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                                     <div className="p-4 bg-[#cbea7b]/30 rounded-full mb-4">
                                         <Zap className="w-12 h-12 text-[#1a3129] opacity-50" />
                                     </div>
-                                    <h3 className="text-xl font-bold text-[#1a3129] mb-2">
-                                        Hasil Analisis
-                                    </h3>
+                                    <h3 className="text-xl font-bold text-[#1a3129] mb-2">Hasil Analisis</h3>
                                     <p className="text-sm text-[#262626] opacity-60 max-w-xs">
-                                        Upload dan analisis foto Nutrition Facts
-                                        untuk melihat hasil NutriScore
+                                        Upload dan analisis foto Nutrition Facts untuk melihat hasil NutriScore
                                     </p>
                                 </div>
                             )}
@@ -686,17 +617,8 @@ export default function NutritionScanner({ onAnalyze }: Props = {}) {
                 </div>
             </main>
 
-            {/* Hidden file input for upload */}
-            <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleChange}
-            />
-            <div>
-                <Footer />
-            </div>
+            <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={handleChange} />
+            <div><Footer /></div>
         </div>
     );
 }
