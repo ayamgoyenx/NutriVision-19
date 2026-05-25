@@ -29,20 +29,20 @@ export default function Home() {
                     </h1>
                     <p className="mt-4 sm:mt-6 text-foreground opacity-80 text-base sm:text-lg md:text-xl leading-6 sm:leading-7 md:leading-8">
                         Pahami kualitas gizi tanpa ribet dengan NutriVision!
-                        Cukup foto tabel Nutrition Facts, kami akan langsung
-                        ekstrak info penting dan hitung NutriScore secara
-                        otomatis. Nggak perlu pusing baca label yang rumit dan
-                        dalam hitungan detik, kamu sudah dapat insight yang
-                        jelas, cepat, dan akurat untuk bantu pilih makanan yang
-                        lebih sehat setiap hari.
+                        Cukup foto tabel Nutrition Facts atau foto makanan,
+                        kami akan langsung ekstrak info penting dan hitung
+                        NutriScore secara otomatis. Nggak perlu pusing baca label
+                        yang rumit dan dalam hitungan detik, kamu sudah dapat
+                        insight yang jelas, cepat, dan akurat untuk bantu pilih
+                        makanan yang lebih sehat setiap hari.
                     </p>
 
                     <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row items-center gap-2 sm:gap-3 md:mt-8">
-                        <button
-                            type="button"
-                            className="rounded-md bg-[#cbea7b] px-3 sm:px-5 py-1.5 sm:py-2 text-sm sm:text-base md:text-lg font-semibold text-black hover:bg-[#b8d96a] w-full sm:w-auto">
+                        <Link
+                            href="/scan"
+                            className="rounded-md bg-[#cbea7b] px-3 sm:px-5 py-1.5 sm:py-2 text-sm sm:text-base md:text-lg font-semibold text-black hover:bg-[#b8d96a] w-full sm:w-auto text-center">
                             Mulai Scan
-                        </button>
+                        </Link>
                         <Link
                             href="/login"
                             className="rounded-md border border-black/15 bg-transparent px-3 sm:px-5 py-1.5 sm:py-2 text-sm sm:text-base md:text-lg font-semibold text-foreground hover:bg-black/5 w-full sm:w-auto text-center">
@@ -72,9 +72,9 @@ export default function Home() {
                     NutriVision adalah platform analisis gizi berbasis AI yang
                     membantu kamu memahami kualitas nutrisi produk dengan lebih
                     mudah dan cepat. Dengan teknologi pemrosesan gambar yang
-                    cerdas, NutriVision mampu membaca tabel Nutrition Facts
-                    langsung dari foto, mengekstrak informasi penting, dan
-                    menghitung NutriScore secara otomatis.
+                    cerdas, NutriVision mampu membaca tabel Nutrition Facts atau
+                    menganalisis foto makanan langsung dari foto, mengekstrak
+                    informasi penting, dan menghitung NutriScore secara otomatis.
                 </p>
             </div>
 
@@ -99,13 +99,13 @@ export default function Home() {
                                     viewBox="0 0 24 24"></Camera>
                             </div>
                             <h3 className="text-lg md:text-xl font-semibold text-neutral-800">
-                                Ambil Foto Nutrition Facts
+                                Ambil Foto Label atau Makanan
                             </h3>
                         </div>
                         <p className="text-sm md:text-base leading-6 text-zinc-800 flex-1">
-                            Cukup foto atau upload tabel Nutrition Facts dari
-                            produk yang ingin kamu analisis. Tidak perlu input
-                            data secara manual.
+                            Cukup foto tabel Nutrition Facts atau foto makanan
+                            yang ingin kamu analisis. Tidak perlu input data
+                            secara manual, semua bisa di-scan dalam satu aplikasi.
                         </p>
                     </div>
 
@@ -118,13 +118,13 @@ export default function Home() {
                                     viewBox="0 0 24 24"></Sparkles>
                             </div>
                             <h3 className="text-lg md:text-xl font-semibold text-neutral-800">
-                                AI Membaca & Mengekstrak Data
+                                AI Membaca, Ekstrak & Analisis
                             </h3>
                         </div>
                         <p className="text-sm md:text-base leading-6 text-zinc-800 flex-1">
-                            Teknologi AI NutriVision akan membaca label gizi dan
-                            mengekstrak informasi kalori dan nutrisi lainnya
-                            secara otomatis.
+                            Teknologi AI NutriVision akan membaca label gizi atau
+                            menganalisis foto makanan, mengekstrak informasi kalori
+                            dan nutrisi lainnya secara otomatis dan akurat.
                         </p>
                     </div>
 
@@ -170,12 +170,12 @@ export default function Home() {
                                     viewBox="0 0 24 24"></Sparkles>
                             </div>
                             <h3 className="text-lg md:text-xl font-semibold text-neutral-800">
-                                AI Nutrition Extraction
+                                AI Nutrition Analysis
                             </h3>
                         </div>
                         <p className="text-sm md:text-base leading-6 text-zinc-800 flex-1">
-                            Cukup upload foto tabel Nutrition Facts, AI
-                            NutriVision akan membaca, mengekstrak, dan
+                            Cukup upload foto tabel Nutrition Facts atau foto
+                            makanan, AI NutriVision akan membaca, mengekstrak, dan
                             menganalisis data nutrisi secara otomatis dalam
                             hitungan detik.
                         </p>
@@ -229,8 +229,8 @@ export default function Home() {
                         Mulai Scan Sekarang!
                     </h2>
                     <p className="max-w-md md:max-w-2xl text-sm sm:text-lg md:text-xl text-[#262626]">
-                        Unggah label Nutrition Facts dan mulai analisis gizi
-                        dalam hitungan detik
+                        Unggah label Nutrition Facts atau foto makanan dan mulai
+                        analisis gizi dalam hitungan detik
                     </p>
                 </div>
 
@@ -241,14 +241,14 @@ export default function Home() {
                                 <ArrowUpFromLine className="w-[32px] md:w-[40px] h-[40px] md:h-[48px] text-[#1a3129]" />
 
                                 <h1 className="text-xl md:text-[32px] font-bold text-[#1a3129] text-center leading-tight">
-                                    Scan Table Nutrition Facts
+                                    Scan Label atau Foto Makanan
                                 </h1>
 
-                                <button
-                                    type="button"
+                                <Link
+                                    href="/scan"
                                     className="rounded-full bg-[#cbea7b] px-8 md:px-10 py-3 md:py-4 text-sm md:text-lg font-bold text-black hover:bg-[#b8d96a] transition-all active:scale-95">
                                     Scan & Analisis!
-                                </button>
+                                </Link>
                             </div>
                         </div>
                     </div>

@@ -172,8 +172,8 @@ export default function Navbar() {
 
                 {/* Desktop Navigation Links */}
                 <div className="hidden md:flex items-center gap-7" suppressHydrationWarning>
-                    {/* Menu Items - Show only for non-logged-in users or home page */}
-                    {!isHydrated || !isLoggedIn ? (
+                    {/* Always show navigation links on home page or login/signup pages */}
+                    {pathname === "/" || pathname === "/login" || pathname === "/signup" ? (
                         <div className="flex items-center gap-5">
                             <a
                                 href="#beranda"
@@ -320,7 +320,7 @@ export default function Navbar() {
             {isMenuOpen && (
                 <div className="md:hidden bg-[#1a3129]/90 border-t border-lime-100/30 px-8 py-4" suppressHydrationWarning>
                     <div className="flex flex-col gap-4">
-                        {!isHydrated || !isLoggedIn ? (
+                        {pathname === "/" || pathname === "/login" || pathname === "/signup" ? (
                             <>
                                 <a
                                     href="#beranda"
@@ -392,6 +392,14 @@ export default function Navbar() {
                                     <p className="text-xs text-stone-300 text-center mb-3">
                                         {userData.email}
                                     </p>
+                                    <button
+                                        onClick={() => {
+                                            router.push("/profile");
+                                            setIsMenuOpen(false);
+                                        }}
+                                        className="w-full px-4 py-2 text-sm text-stone-50 hover:bg-[#2d5a45] rounded transition mb-2">
+                                        Edit Profil
+                                    </button>
                                     <button
                                         onClick={() => {
                                             handleLogout();
